@@ -9,6 +9,12 @@ export function validateEndpointUrl(value: string) {
   return url;
 }
 
+export function fetchPublicEndpoint(url: URL, init: RequestInit, fetcher: typeof fetch = fetch) {
+  // Cloudflare Workers accepts a URL string or Request here, not a URL object.
+  // Canonicalizing after validation also ensures the exact validated destination is used.
+  return fetcher(url.toString(), init);
+}
+
 export function fillRequestTemplate(template: string, scenarioInput: string) {
   const escapedInput = JSON.stringify(scenarioInput).slice(1, -1);
   return JSON.parse(template.replaceAll("{{scenario_input}}", escapedInput)) as unknown;

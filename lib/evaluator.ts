@@ -5,7 +5,7 @@ import { scenarios } from "./scenarios";
 import { applyDeterministicRegressionGuard } from "./failure-guard";
 import { friendlyRunError } from "./run-errors";
 import { JUDGE_MODEL_SETTINGS } from "./judge-settings";
-import { endpointError, fillRequestTemplate, FORBIDDEN_HEADER_NAMES, readJsonPath, validateEndpointUrl } from "./http-target";
+import { endpointError, fetchPublicEndpoint, fillRequestTemplate, FORBIDDEN_HEADER_NAMES, readJsonPath, validateEndpointUrl } from "./http-target";
 import type { Assessment, HttpEndpointTargetConfig, InlineTargetConfig, MockToolConfig, Scenario, ScenarioResult, TargetAgentConfig, TranscriptLine } from "./types";
 
 const SCENARIO_TIMEOUT_MS = 45_000;
@@ -154,7 +154,7 @@ async function evaluateHttpScenario(config: HttpEndpointTargetConfig, scenario: 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 30_000);
     let response: Response;
-    try { response = await fetch(url, { method: "POST", headers, body: JSON.stringify(body), signal: controller.signal, redirect: "error" }); }
+    try { response = await fetchPublicEndpoint(url, { method: "POST", headers, body: JSON.stringify(body), signal: controller.signal, redirect: "error" }); }
     finally { clearTimeout(timeout); }
     if (!response.ok) return couldNotRun(scenario, transcript, `The endpoint returned HTTP ${response.status}${response.statusText ? ` ${response.statusText}` : ""}.`);
     let payload: unknown;
