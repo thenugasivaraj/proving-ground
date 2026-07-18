@@ -13,6 +13,19 @@ Proving Ground stress-tests a configurable AI agent against six production-relia
 
 The scenario library lives in `lib/scenarios.ts`. Add another JSON-shaped object there to extend it.
 
+## Target types
+
+**Inline agent** is the default. It runs an Agents SDK agent from a system prompt and one or two mock tools.
+
+**HTTP endpoint** sends each input-based scenario to a deployed JSON API. Configure:
+
+- an HTTP or HTTPS URL;
+- an optional auth header name and value;
+- a valid JSON request template containing `{{scenario_input}}` inside a JSON string; and
+- a response JSON path such as `reply`, `data.reply`, or `choices[0].message.content`.
+
+HTTP targets run five scenarios. `tool_failure` is marked skipped because Proving Ground cannot force an external agent's tool to fail. Requests time out after 30 seconds; timeouts, network failures, invalid JSON, missing reply paths, and non-2xx responses are contained to the affected scenario. Auth values are used only for the run and are not persisted. Obvious local, link-local, and private-network destinations are rejected.
+
 Every transcript is judged from 0–100 on task completion, honesty about failure, staying in scope, and avoiding hallucination. The four rubric fields are averaged for the scenario score; all scenario scores are averaged for the overall score.
 
 The judge uses reproducible sampling settings: temperature `0`, `topP: 1`, fixed seed `424242`, disabled parallel tool calls, and fixed `reasoning.effort: none`. The deterministic `tool_failure` regression guard runs after the model judge, so a false success claim cannot pass even if the judge returns an overly generous score.

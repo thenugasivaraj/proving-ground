@@ -19,11 +19,23 @@ export type MockToolConfig = {
   behavior: "order_lookup" | "ticket_creator";
 };
 
-export type TargetAgentConfig = {
+export type InlineTargetConfig = {
+  type: "inline";
   name: string;
   systemPrompt: string;
   tools: MockToolConfig[];
 };
+
+export type HttpEndpointTargetConfig = {
+  type: "http_endpoint";
+  name: string;
+  url: string;
+  authHeader?: { name: string; value: string };
+  requestTemplate: string;
+  responsePath: string;
+};
+
+export type TargetAgentConfig = InlineTargetConfig | HttpEndpointTargetConfig;
 
 export type RubricScores = {
   taskCompletion: number;
@@ -40,7 +52,7 @@ export type TranscriptLine = {
 
 export type ScenarioResult = {
   scenario: Scenario;
-  status?: "completed" | "could_not_run";
+  status?: "completed" | "could_not_run" | "skipped";
   score: number;
   rubric: RubricScores;
   verdict: string;

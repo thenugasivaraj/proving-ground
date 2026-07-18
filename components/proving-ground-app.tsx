@@ -51,6 +51,15 @@ const weakSampleAssessment: Assessment = {
 
 type Entry = { id: number; agentName: string; score: number; tier: string; scenarioCount: number; createdAt: string };
 
+const defaultHttpTarget: TargetAgentConfig = {
+  type: "http_endpoint",
+  name: "External Support Agent",
+  url: "https://api.example.com/agent",
+  authHeader: { name: "", value: "" },
+  requestTemplate: '{\n  "message": "{{scenario_input}}"\n}',
+  responsePath: "reply",
+};
+
 function scoreColor(score: number) { return score >= 85 ? "green" : score >= 60 ? "amber" : "red"; }
 function formatDate(value: string) { const date = new Date(value); return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat("en", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" }).format(date); }
 
@@ -67,6 +76,8 @@ export function ProvingGroundApp({ initialView = "dashboard" }: { initialView?: 
   useEffect(() => { if (view === "leaderboard") fetch("/api/leaderboard").then((r) => r.json()).then((d) => setEntries(d.entries ?? [])).catch(() => setEntries([])); }, [view]);
   const issueCount = useMemo(() => assessment.results.reduce((sum, r) => sum + r.failures.length, 0), [assessment]);
   const couldNotRunCount = useMemo(() => assessment.results.filter((result) => result.status === "could_not_run").length, [assessment]);
+  const skippedCount = useMemo(() => assessment.results.filter((result) => result.status === "skipped").length, [assessment]);
+  const scoredResults = useMemo(() => assessment.results.filter((result) => result.status !== "could_not_run" && result.status !== "skipped"), [assessment]);
 
   function navigate(next: "dashboard" | "leaderboard") {
     setView(next);
@@ -74,7 +85,7 @@ export function ProvingGroundApp({ initialView = "dashboard" }: { initialView?: 
   }
 
   function updateTool(index: number, key: keyof MockToolConfig, value: string) {
-    setConfig((current) => ({ ...current, tools: current.tools.map((tool, i) => i === index ? { ...tool, [key]: value } : tool) }));
+    setConfig((current) => current.type === "inline" ? ({ ...current, tools: current.tools.map((tool, i) => i === index ? { ...tool, [key]: value } : tool) }) : current);
   }
 
   function loadSeed(agent: TargetAgentConfig, seededAssessment: Assessment) {
@@ -86,11 +97,19 @@ export function ProvingGroundApp({ initialView = "dashboard" }: { initialView?: 
 
   function configError() {
     if (!config.name.trim()) return "Enter an agent name before running the assessment.";
-    if (!config.systemPrompt.trim()) return "Enter a system prompt before running the assessment.";
-    if (!Array.isArray(config.tools) || config.tools.length < 1 || config.tools.length > 2) return "Choose one or two mock tools.";
-    for (const mockTool of config.tools) {
-      if (!mockTool.name.trim() || !mockTool.description.trim()) return "Every mock tool needs a name and description.";
-      if (!/^[a-zA-Z0-9_-]+$/.test(mockTool.name)) return "Tool names may contain only letters, numbers, underscores, and hyphens.";
+    if (config.type === "inline") {
+      if (!config.systemPrompt.trim()) return "Enter a system prompt before running the assessment.";
+      if (config.tools.length < 1 || config.tools.length > 2) return "Choose one or two mock tools.";
+      for (const mockTool of config.tools) {
+        if (!mockTool.name.trim() || !mockTool.description.trim()) return "Every mock tool needs a name and description.";
+        if (!/^[a-zA-Z0-9_-]+$/.test(mockTool.name)) return "Tool names may contain only letters, numbers, underscores, and hyphens.";
+      }
+    } else {
+      if (!/^https?:\/\//i.test(config.url)) return "Enter a valid HTTP or HTTPS endpoint URL.";
+      if (!config.requestTemplate.includes("{{scenario_input}}")) return "The request template must include {{scenario_input}}.";
+      try { JSON.parse(config.requestTemplate.replaceAll("{{scenario_input}}", "test input")); } catch { return "Enter a valid JSON request template with {{scenario_input}} inside a JSON string."; }
+      if (!config.responsePath.trim()) return "Enter the JSON path to the agent reply.";
+      if (config.authHeader && Boolean(config.authHeader.name.trim()) !== Boolean(config.authHeader.value)) return "Provide both the auth header name and value, or leave both blank.";
     }
     return "";
   }
@@ -117,7 +136,7 @@ export function ProvingGroundApp({ initialView = "dashboard" }: { initialView?: 
         <button className={view === "leaderboard" ? "active" : ""} onClick={() => navigate("leaderboard")}>Reliability Index</button>
         <button onClick={() => { navigate("dashboard"); setTimeout(() => document.getElementById("test-library")?.scrollIntoView(), 0); }}>Scenarios</button>
       </nav>
-      <div className="header-actions"><span className="loaded"><i /> 6 scenarios loaded</span><button className="primary-button" onClick={runTests} disabled={running}>{running ? <><span className="spinner" /> Running 1 of 6…</> : <>▷ Run stress test</>}</button></div>
+      <div className="header-actions"><span className="loaded"><i /> {config.type === "http_endpoint" ? "5 runnable · 1 skipped" : "6 scenarios loaded"}</span><button className="primary-button" onClick={runTests} disabled={running}>{running ? <><span className="spinner" /> Running scenarios…</> : <>▷ Run stress test</>}</button></div>
     </header>
 
     {view === "leaderboard" ? <main className="main leaderboard-page">
@@ -132,22 +151,33 @@ export function ProvingGroundApp({ initialView = "dashboard" }: { initialView?: 
     </main> : <main className="main">
       <section className="page-heading"><div><p className="eyebrow">AGENT RELIABILITY LAB</p><h1>Reliability assessment</h1><p>{assessment.agentName} · {formatDate(assessment.completedAt)}</p></div><button className="secondary-button" onClick={() => setConfigOpen(!configOpen)}>{configOpen ? "Hide" : "Edit"} target config</button></section>
       {configOpen && <section className="config-card card">
-        <div className="config-title"><div><span className="step">01</span><div><h2>Target agent</h2><p>Define the instructions and mock capabilities to stress-test.</p></div></div><div className="seed-switcher" aria-label="Seeded agent examples"><button className={config.name === seededAgent.name ? "selected" : ""} onClick={() => loadSeed(seededAgent, honestSampleAssessment)}>Honest example</button><button className={config.name === weakSeededAgent.name ? "selected weak" : "weak"} onClick={() => loadSeed(weakSeededAgent, weakSampleAssessment)}>Weak example</button><span className="model-pill">GPT‑5.6</span></div></div>
-        <div className="form-grid"><label>Agent name<input value={config.name} onChange={(e) => setConfig({ ...config, name: e.target.value })} /></label><label className="prompt-field">System prompt<textarea rows={5} value={config.systemPrompt} onChange={(e) => setConfig({ ...config, systemPrompt: e.target.value })} /></label></div>
-        <div className="tools-heading"><span>Mock tools</span><small>1–2 tools</small></div>
-        <div className="tool-grid">{config.tools.map((mockTool, index) => <div className="tool-config" key={index}><span className="tool-number">{index + 1}</span><label>Name<input value={mockTool.name} onChange={(e) => updateTool(index, "name", e.target.value)} /></label><label>Description<input value={mockTool.description} onChange={(e) => updateTool(index, "description", e.target.value)} /></label></div>)}</div>
-        <div className="config-footer"><span>Your API key stays server-side.</span><button className="primary-button" onClick={runTests} disabled={running}>{running ? "Running assessment…" : "Run all 6 scenarios →"}</button></div>
+        <div className="config-title"><div><span className="step">01</span><div><h2>Target agent</h2><p>Choose an inline agent or test your deployed HTTP endpoint.</p></div></div><span className="model-pill">GPT‑5.6 judge</span></div>
+        <div className="target-type-switcher" aria-label="Target type"><button className={config.type === "inline" ? "selected" : ""} onClick={() => loadSeed(seededAgent, honestSampleAssessment)}>Inline agent <small>Default</small></button><button className={config.type === "http_endpoint" ? "selected" : ""} onClick={() => { setConfig(defaultHttpTarget); setError(""); }}>HTTP endpoint</button></div>
+        {config.type === "inline" ? <>
+          <div className="seed-switcher inline-seeds" aria-label="Seeded agent examples"><span>Load example:</span><button className={config.name === seededAgent.name ? "selected" : ""} onClick={() => loadSeed(seededAgent, honestSampleAssessment)}>Honest agent</button><button className={config.name === weakSeededAgent.name ? "selected weak" : "weak"} onClick={() => loadSeed(weakSeededAgent, weakSampleAssessment)}>Weak agent</button></div>
+          <div className="form-grid"><label>Agent name<input value={config.name} onChange={(e) => setConfig({ ...config, name: e.target.value })} /></label><label className="prompt-field">System prompt<textarea rows={5} value={config.systemPrompt} onChange={(e) => setConfig({ ...config, systemPrompt: e.target.value })} /></label></div>
+          <div className="tools-heading"><span>Mock tools</span><small>1–2 tools</small></div>
+          <div className="tool-grid">{config.tools.map((mockTool, index) => <div className="tool-config" key={index}><span className="tool-number">{index + 1}</span><label>Name<input value={mockTool.name} onChange={(e) => updateTool(index, "name", e.target.value)} /></label><label>Description<input value={mockTool.description} onChange={(e) => updateTool(index, "description", e.target.value)} /></label></div>)}</div>
+        </> : <div className="endpoint-form">
+          <label>Target name<input value={config.name} onChange={(e) => setConfig({ ...config, name: e.target.value })} /></label>
+          <label className="endpoint-url">Endpoint URL<input inputMode="url" placeholder="https://api.example.com/agent" value={config.url} onChange={(e) => setConfig({ ...config, url: e.target.value })} /></label>
+          <label>Auth header name <small>Optional</small><input placeholder="Authorization" value={config.authHeader?.name ?? ""} onChange={(e) => setConfig({ ...config, authHeader: { name: e.target.value, value: config.authHeader?.value ?? "" } })} /></label>
+          <label>Auth header value <small>Optional · server-side only</small><input type="password" autoComplete="off" placeholder="Bearer …" value={config.authHeader?.value ?? ""} onChange={(e) => setConfig({ ...config, authHeader: { name: config.authHeader?.name ?? "", value: e.target.value } })} /></label>
+          <label className="endpoint-template">JSON request template<textarea rows={6} value={config.requestTemplate} onChange={(e) => setConfig({ ...config, requestTemplate: e.target.value })} /><small>Use {"{{scenario_input}}"} where the scenario message belongs.</small></label>
+          <label>Response JSON path<input placeholder="data.reply or choices[0].message.content" value={config.responsePath} onChange={(e) => setConfig({ ...config, responsePath: e.target.value })} /></label>
+        </div>}
+        <div className="config-footer"><span>{config.type === "http_endpoint" ? "Auth values are sent only to the endpoint and are never stored. tool_failure will be skipped." : "Your OpenAI API key stays server-side."}</span><button className="primary-button" onClick={runTests} disabled={running}>{running ? "Running assessment…" : `Run ${config.type === "http_endpoint" ? 5 : 6} scenarios →`}</button></div>
       </section>}
       {error && <div className="error-banner"><strong>Assessment could not start.</strong><span>{error}</span></div>}
       {couldNotRunCount > 0 && <div className="error-banner partial"><strong>{couldNotRunCount} {couldNotRunCount === 1 ? "scenario could" : "scenarios could"} not run.</strong><span>The completed results were preserved. Expand the affected row for details, then retry.</span></div>}
       <section className="score-grid">
-        <article className="card score-card"><div className={`score-ring ${scoreColor(assessment.overallScore)}`} style={{ "--score": assessment.overallScore } as React.CSSProperties}><div><strong>{assessment.overallScore}</strong><span>/100</span></div></div><div className="score-summary"><span className={`tier-badge ${scoreColor(assessment.overallScore)}`}>{assessment.tier}</span><h2>{assessment.overallScore >= 85 ? "Ready for production review" : assessment.overallScore >= 60 ? "Promising, with guardrails needed" : "Not ready for live traffic"}</h2><p>Average across 24 rubric scores and six reliability scenarios.</p><div className="rubric-mini">{Object.entries(assessment.results.reduce((a, r) => ({ taskCompletion: a.taskCompletion + r.rubric.taskCompletion / 6, honestyAboutFailure: a.honestyAboutFailure + r.rubric.honestyAboutFailure / 6, stayingInScope: a.stayingInScope + r.rubric.stayingInScope / 6, avoidingHallucination: a.avoidingHallucination + r.rubric.avoidingHallucination / 6 }), { taskCompletion: 0, honestyAboutFailure: 0, stayingInScope: 0, avoidingHallucination: 0 })).map(([key, value]) => <span key={key}><b>{Math.round(value)}</b>{key.replace(/([A-Z])/g, " $1")}</span>)}</div></div></article>
-        <article className="card category-card"><div className="card-heading"><div><p className="eyebrow">SCENARIO PERFORMANCE</p><h2>Category scores</h2></div><span>{assessment.results.filter((r) => r.status !== "could_not_run" && r.score >= 60).length}/{assessment.results.filter((r) => r.status !== "could_not_run").length} completed passed{couldNotRunCount ? ` · ${couldNotRunCount} not run` : ""}</span></div>{assessment.results.map((result) => <div className={`bar-row ${result.status === "could_not_run" ? "not-run" : ""}`} key={result.scenario.id}><span>{result.scenario.category}</span><div className="bar-track"><i className={result.status === "could_not_run" ? "muted" : scoreColor(result.score)} style={{ width: result.status === "could_not_run" ? "100%" : `${result.score}%` }} /></div>{result.status === "could_not_run" ? <em>Not run</em> : <strong className={scoreColor(result.score)}>{result.score}</strong>}</div>)}</article>
+        <article className="card score-card"><div className={`score-ring ${scoreColor(assessment.overallScore)}`} style={{ "--score": assessment.overallScore } as React.CSSProperties}><div><strong>{assessment.overallScore}</strong><span>/100</span></div></div><div className="score-summary"><span className={`tier-badge ${scoreColor(assessment.overallScore)}`}>{assessment.tier}</span><h2>{assessment.overallScore >= 85 ? "Ready for production review" : assessment.overallScore >= 60 ? "Promising, with guardrails needed" : "Not ready for live traffic"}</h2><p>Average across {scoredResults.length * 4} rubric scores and {scoredResults.length} reliability scenarios.</p><div className="rubric-mini">{Object.entries(scoredResults.reduce((a, r) => ({ taskCompletion: a.taskCompletion + r.rubric.taskCompletion / Math.max(1, scoredResults.length), honestyAboutFailure: a.honestyAboutFailure + r.rubric.honestyAboutFailure / Math.max(1, scoredResults.length), stayingInScope: a.stayingInScope + r.rubric.stayingInScope / Math.max(1, scoredResults.length), avoidingHallucination: a.avoidingHallucination + r.rubric.avoidingHallucination / Math.max(1, scoredResults.length) }), { taskCompletion: 0, honestyAboutFailure: 0, stayingInScope: 0, avoidingHallucination: 0 })).map(([key, value]) => <span key={key}><b>{Math.round(value)}</b>{key.replace(/([A-Z])/g, " $1")}</span>)}</div></div></article>
+        <article className="card category-card"><div className="card-heading"><div><p className="eyebrow">SCENARIO PERFORMANCE</p><h2>Category scores</h2></div><span>{scoredResults.filter((r) => r.score >= 60).length}/{scoredResults.length} completed passed{couldNotRunCount ? ` · ${couldNotRunCount} not run` : ""}{skippedCount ? ` · ${skippedCount} skipped` : ""}</span></div>{assessment.results.map((result) => <div className={`bar-row ${result.status === "could_not_run" || result.status === "skipped" ? "not-run" : ""}`} key={result.scenario.id}><span>{result.scenario.category}</span><div className="bar-track"><i className={result.status === "could_not_run" || result.status === "skipped" ? "muted" : scoreColor(result.score)} style={{ width: result.status === "could_not_run" || result.status === "skipped" ? "100%" : `${result.score}%` }} /></div>{result.status === "could_not_run" ? <em>Not run</em> : result.status === "skipped" ? <em>Skipped</em> : <strong className={scoreColor(result.score)}>{result.score}</strong>}</div>)}</article>
       </section>
       <section className="results-grid" id="test-library">
         <div className="card transcripts"><div className="card-heading"><div><p className="eyebrow">FULL RUN LOG</p><h2>Scenario transcripts</h2></div><span>{issueCount} {issueCount === 1 ? "issue" : "issues"} found</span></div>
           {assessment.results.map((result, index) => <div className={`scenario ${expanded === result.scenario.id ? "expanded" : ""}`} key={result.scenario.id}>
-            <button className="scenario-row" onClick={() => setExpanded(expanded === result.scenario.id ? "" : result.scenario.id)} aria-expanded={expanded === result.scenario.id}><span className="row-index">{String(index + 1).padStart(2, "0")}</span><span className={`scenario-tag ${result.status === "could_not_run" ? "muted" : scoreColor(result.score)}`}>{result.scenario.category}</span><span className="scenario-label">{result.scenario.input}</span>{result.status === "could_not_run" ? <strong className="muted">—</strong> : <strong className={scoreColor(result.score)}>{result.score}<small>/100</small></strong>}<span className={`pass-pill ${result.status === "could_not_run" ? "could-not-run" : result.score >= 60 ? "pass" : "fail"}`}>{result.status === "could_not_run" ? "COULD NOT RUN" : result.score >= 60 ? "PASS" : "FAIL"}</span><span className="chevron">⌄</span></button>
+            <button className="scenario-row" onClick={() => setExpanded(expanded === result.scenario.id ? "" : result.scenario.id)} aria-expanded={expanded === result.scenario.id}><span className="row-index">{String(index + 1).padStart(2, "0")}</span><span className={`scenario-tag ${result.status === "could_not_run" || result.status === "skipped" ? "muted" : scoreColor(result.score)}`}>{result.scenario.category}</span><span className="scenario-label">{result.scenario.input}</span>{result.status === "could_not_run" || result.status === "skipped" ? <strong className="muted">—</strong> : <strong className={scoreColor(result.score)}>{result.score}<small>/100</small></strong>}<span className={`pass-pill ${result.status === "could_not_run" || result.status === "skipped" ? "could-not-run" : result.score >= 60 ? "pass" : "fail"}`}>{result.status === "could_not_run" ? "COULD NOT RUN" : result.status === "skipped" ? "SKIPPED" : result.score >= 60 ? "PASS" : "FAIL"}</span><span className="chevron">⌄</span></button>
             {expanded === result.scenario.id && <div className="transcript-body"><div className="verdict"><strong>Judge verdict</strong><p>{result.verdict}</p>{result.failures.map((failure) => <span key={failure}>⚠ {failure}</span>)}</div><div className="transcript-lines">{result.transcript.map((line, lineIndex) => <div className={`transcript-line ${line.role} ${line.failure ? "failure" : ""}`} key={lineIndex}><span>{line.role}</span><p>{line.content}</p></div>)}</div></div>}
           </div>)}
         </div>
