@@ -66,6 +66,7 @@ export function ProvingGroundApp({ initialView = "dashboard" }: { initialView?: 
 
   useEffect(() => { if (view === "leaderboard") fetch("/api/leaderboard").then((r) => r.json()).then((d) => setEntries(d.entries ?? [])).catch(() => setEntries([])); }, [view]);
   const issueCount = useMemo(() => assessment.results.reduce((sum, r) => sum + r.failures.length, 0), [assessment]);
+  const couldNotRunCount = useMemo(() => assessment.results.filter((result) => result.status === "could_not_run").length, [assessment]);
 
   function navigate(next: "dashboard" | "leaderboard") {
     setView(next);
@@ -83,12 +84,26 @@ export function ProvingGroundApp({ initialView = "dashboard" }: { initialView?: 
     setError("");
   }
 
+  function configError() {
+    if (!config.name.trim()) return "Enter an agent name before running the assessment.";
+    if (!config.systemPrompt.trim()) return "Enter a system prompt before running the assessment.";
+    if (!Array.isArray(config.tools) || config.tools.length < 1 || config.tools.length > 2) return "Choose one or two mock tools.";
+    for (const mockTool of config.tools) {
+      if (!mockTool.name.trim() || !mockTool.description.trim()) return "Every mock tool needs a name and description.";
+      if (!/^[a-zA-Z0-9_-]+$/.test(mockTool.name)) return "Tool names may contain only letters, numbers, underscores, and hyphens.";
+    }
+    return "";
+  }
+
   async function runTests() {
+    const invalid = configError();
+    if (invalid) { setError(invalid); setConfigOpen(true); return; }
     setRunning(true); setError(""); setConfigOpen(false);
     try {
       const response = await fetch("/api/run", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(config) });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "The assessment could not be completed.");
+      if (!data.assessment || !Array.isArray(data.assessment.results)) throw new Error("The server returned an incomplete assessment. Please retry.");
       setAssessment(data.assessment); setExpanded(data.assessment.results.find((r: ScenarioResult) => r.failures.length)?.scenario.id ?? data.assessment.results[0].scenario.id);
     } catch (caught) { setError(caught instanceof Error ? caught.message : "The assessment could not be completed."); setConfigOpen(true); }
     finally { setRunning(false); }
@@ -124,14 +139,15 @@ export function ProvingGroundApp({ initialView = "dashboard" }: { initialView?: 
         <div className="config-footer"><span>Your API key stays server-side.</span><button className="primary-button" onClick={runTests} disabled={running}>{running ? "Running assessment…" : "Run all 6 scenarios →"}</button></div>
       </section>}
       {error && <div className="error-banner"><strong>Assessment could not start.</strong><span>{error}</span></div>}
+      {couldNotRunCount > 0 && <div className="error-banner partial"><strong>{couldNotRunCount} {couldNotRunCount === 1 ? "scenario could" : "scenarios could"} not run.</strong><span>The completed results were preserved. Expand the affected row for details, then retry.</span></div>}
       <section className="score-grid">
         <article className="card score-card"><div className={`score-ring ${scoreColor(assessment.overallScore)}`} style={{ "--score": assessment.overallScore } as React.CSSProperties}><div><strong>{assessment.overallScore}</strong><span>/100</span></div></div><div className="score-summary"><span className={`tier-badge ${scoreColor(assessment.overallScore)}`}>{assessment.tier}</span><h2>{assessment.overallScore >= 85 ? "Ready for production review" : assessment.overallScore >= 60 ? "Promising, with guardrails needed" : "Not ready for live traffic"}</h2><p>Average across 24 rubric scores and six reliability scenarios.</p><div className="rubric-mini">{Object.entries(assessment.results.reduce((a, r) => ({ taskCompletion: a.taskCompletion + r.rubric.taskCompletion / 6, honestyAboutFailure: a.honestyAboutFailure + r.rubric.honestyAboutFailure / 6, stayingInScope: a.stayingInScope + r.rubric.stayingInScope / 6, avoidingHallucination: a.avoidingHallucination + r.rubric.avoidingHallucination / 6 }), { taskCompletion: 0, honestyAboutFailure: 0, stayingInScope: 0, avoidingHallucination: 0 })).map(([key, value]) => <span key={key}><b>{Math.round(value)}</b>{key.replace(/([A-Z])/g, " $1")}</span>)}</div></div></article>
-        <article className="card category-card"><div className="card-heading"><div><p className="eyebrow">SCENARIO PERFORMANCE</p><h2>Category scores</h2></div><span>{assessment.results.filter((r) => r.score >= 60).length}/{assessment.results.length} passed</span></div>{assessment.results.map((result) => <div className="bar-row" key={result.scenario.id}><span>{result.scenario.category}</span><div className="bar-track"><i className={scoreColor(result.score)} style={{ width: `${result.score}%` }} /></div><strong className={scoreColor(result.score)}>{result.score}</strong></div>)}</article>
+        <article className="card category-card"><div className="card-heading"><div><p className="eyebrow">SCENARIO PERFORMANCE</p><h2>Category scores</h2></div><span>{assessment.results.filter((r) => r.status !== "could_not_run" && r.score >= 60).length}/{assessment.results.filter((r) => r.status !== "could_not_run").length} completed passed{couldNotRunCount ? ` · ${couldNotRunCount} not run` : ""}</span></div>{assessment.results.map((result) => <div className={`bar-row ${result.status === "could_not_run" ? "not-run" : ""}`} key={result.scenario.id}><span>{result.scenario.category}</span><div className="bar-track"><i className={result.status === "could_not_run" ? "muted" : scoreColor(result.score)} style={{ width: result.status === "could_not_run" ? "100%" : `${result.score}%` }} /></div>{result.status === "could_not_run" ? <em>Not run</em> : <strong className={scoreColor(result.score)}>{result.score}</strong>}</div>)}</article>
       </section>
       <section className="results-grid" id="test-library">
         <div className="card transcripts"><div className="card-heading"><div><p className="eyebrow">FULL RUN LOG</p><h2>Scenario transcripts</h2></div><span>{issueCount} {issueCount === 1 ? "issue" : "issues"} found</span></div>
           {assessment.results.map((result, index) => <div className={`scenario ${expanded === result.scenario.id ? "expanded" : ""}`} key={result.scenario.id}>
-            <button className="scenario-row" onClick={() => setExpanded(expanded === result.scenario.id ? "" : result.scenario.id)} aria-expanded={expanded === result.scenario.id}><span className="row-index">{String(index + 1).padStart(2, "0")}</span><span className={`scenario-tag ${scoreColor(result.score)}`}>{result.scenario.category}</span><span className="scenario-label">{result.scenario.input}</span><strong className={scoreColor(result.score)}>{result.score}<small>/100</small></strong><span className={`pass-pill ${result.score >= 60 ? "pass" : "fail"}`}>{result.score >= 60 ? "PASS" : "FAIL"}</span><span className="chevron">⌄</span></button>
+            <button className="scenario-row" onClick={() => setExpanded(expanded === result.scenario.id ? "" : result.scenario.id)} aria-expanded={expanded === result.scenario.id}><span className="row-index">{String(index + 1).padStart(2, "0")}</span><span className={`scenario-tag ${result.status === "could_not_run" ? "muted" : scoreColor(result.score)}`}>{result.scenario.category}</span><span className="scenario-label">{result.scenario.input}</span>{result.status === "could_not_run" ? <strong className="muted">—</strong> : <strong className={scoreColor(result.score)}>{result.score}<small>/100</small></strong>}<span className={`pass-pill ${result.status === "could_not_run" ? "could-not-run" : result.score >= 60 ? "pass" : "fail"}`}>{result.status === "could_not_run" ? "COULD NOT RUN" : result.score >= 60 ? "PASS" : "FAIL"}</span><span className="chevron">⌄</span></button>
             {expanded === result.scenario.id && <div className="transcript-body"><div className="verdict"><strong>Judge verdict</strong><p>{result.verdict}</p>{result.failures.map((failure) => <span key={failure}>⚠ {failure}</span>)}</div><div className="transcript-lines">{result.transcript.map((line, lineIndex) => <div className={`transcript-line ${line.role} ${line.failure ? "failure" : ""}`} key={lineIndex}><span>{line.role}</span><p>{line.content}</p></div>)}</div></div>}
           </div>)}
         </div>

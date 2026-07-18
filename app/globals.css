@@ -36,3 +36,13 @@ footer{border-top:1px solid var(--line);padding:18px 30px;background:#fff;displa
 @media(max-width:1050px){.topbar{grid-template-columns:220px 1fr}.header-actions .loaded{display:none}.topbar nav{display:none}.score-grid,.results-grid{grid-template-columns:1fr}.form-grid{grid-template-columns:1fr}.score-card{justify-content:center}.findings{display:grid;grid-template-columns:repeat(2,1fr);gap:0 20px}.findings>p,.findings>h2,.findings>button{grid-column:1/-1}.leaderboard-header,.leaderboard-row{grid-template-columns:60px 1fr 170px 80px 70px}}
 @media(max-width:720px){.topbar{height:64px;padding:0 16px;grid-template-columns:1fr auto}.brand{font-size:14px}.header-actions{gap:0}.primary-button{padding:0 13px}.main{padding:20px 14px}.page-heading{align-items:flex-start;flex-direction:column}.config-card{display:none}.score-grid{grid-template-columns:1fr}.score-card{flex-direction:column;text-align:center}.score-ring{width:190px;height:190px}.bar-row{grid-template-columns:125px 1fr 34px;gap:8px}.results-grid{display:block}.findings{margin-top:16px;display:block}.scenario-row{grid-template-columns:30px 115px 1fr 48px 22px}.scenario-label,.pass-pill{display:none}.transcript-body{grid-template-columns:1fr}.verdict{border-right:0;border-bottom:1px solid var(--line);padding:0 0 12px}.tool-grid{grid-template-columns:1fr}.leaderboard-header{display:none}.leaderboard-row{grid-template-columns:42px 1fr 62px;padding:16px}.leaderboard-row .tier-badge,.leaderboard-row>span:nth-of-type(3){display:none}.tier-key{grid-template-columns:1fr}footer{flex-direction:column;gap:5px}}
 @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
+
+/* Partial-run and recoverable error states */
+.error-banner.partial{background:var(--pale-amber);border-color:#efc576;color:#8a5700}
+.bar-track i.muted{background:repeating-linear-gradient(90deg,#cbd2dc 0 8px,#e5e9ef 8px 14px)}
+.bar-row>em{font:500 10px var(--font-geist-mono);color:#667085;font-style:normal;white-space:nowrap}
+.bar-row.not-run{grid-template-columns:170px 1fr 58px}
+.muted{color:#98a2b3}
+.scenario-row{grid-template-columns:42px 160px 1fr 70px 104px 28px}
+.pass-pill.could-not-run{color:#5f6877;background:#f2f4f7;border:1px solid #cfd5dd;white-space:nowrap}
+@media(max-width:720px){.scenario-row{grid-template-columns:30px 115px 1fr 48px 22px}.bar-row.not-run{grid-template-columns:125px 1fr 58px}}

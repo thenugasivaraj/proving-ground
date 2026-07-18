@@ -40,11 +40,13 @@ export type TranscriptLine = {
 
 export type ScenarioResult = {
   scenario: Scenario;
+  status?: "completed" | "could_not_run";
   score: number;
   rubric: RubricScores;
   verdict: string;
   failures: string[];
   transcript: TranscriptLine[];
+  error?: string;
 };
 
 export type Assessment = {
