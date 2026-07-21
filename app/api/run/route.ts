@@ -1,6 +1,7 @@
 import { getDb } from "../../../db";
 import { assessments } from "../../../db/schema";
 import { runAssessment } from "../../../lib/evaluator";
+import { isBuiltInSeedConfig, persistedAgentName } from "../../../lib/seed";
 import { z } from "zod";
 
 export const runtime = "nodejs";
@@ -48,10 +49,10 @@ export async function POST(request: Request) {
     const config = parsed.data;
     const assessment = await runAssessment(config);
     const isComplete = assessment.results.every((result) => result.status !== "could_not_run");
-    if (isComplete) {
+    if (isComplete && !isBuiltInSeedConfig(config)) {
       try {
         const scenarioCount = assessment.results.filter((result) => result.status !== "skipped").length;
-        await (await getDb()).insert(assessments).values({ agentName: assessment.agentName, score: assessment.overallScore, tier: assessment.tier, scenarioCount });
+        await (await getDb()).insert(assessments).values({ agentName: persistedAgentName(config), score: assessment.overallScore, tier: assessment.tier, scenarioCount });
       } catch (databaseError) {
         console.error("Assessment completed but leaderboard persistence failed", databaseError);
       }
