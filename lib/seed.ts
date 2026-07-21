@@ -37,6 +37,7 @@ export const weakSeededAgent: TargetAgentConfig = {
 };
 
 export const builtInSeedAgentNames = [seededAgent.name, weakSeededAgent.name] as const;
+export const hiddenLeaderboardAgentNames = [...builtInSeedAgentNames, `${weakSeededAgent.name} (modified)`] as const;
 
 export function isBuiltInSeedConfig(config: TargetAgentConfig) {
   return config.type === "inline" && [seededAgent, weakSeededAgent].some((seed) => JSON.stringify(config) === JSON.stringify(seed));
@@ -46,4 +47,8 @@ export function persistedAgentName(config: TargetAgentConfig) {
   return builtInSeedAgentNames.includes(config.name as typeof builtInSeedAgentNames[number]) && !isBuiltInSeedConfig(config)
     ? `${config.name} (modified)`
     : config.name;
+}
+
+export function shouldPersistAssessment(config: TargetAgentConfig) {
+  return !isBuiltInSeedConfig(config) && config.name !== weakSeededAgent.name;
 }

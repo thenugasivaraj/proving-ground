@@ -1,7 +1,7 @@
 import { desc } from "drizzle-orm";
 import { getDb } from "../../../db";
 import { assessments } from "../../../db/schema";
-import { builtInSeedAgentNames } from "../../../lib/seed";
+import { hiddenLeaderboardAgentNames } from "../../../lib/seed";
 
 export async function GET() {
   const seeded = [
@@ -10,7 +10,7 @@ export async function GET() {
   ];
   try {
     const rows = await (await getDb()).select().from(assessments).orderBy(desc(assessments.score), desc(assessments.createdAt)).limit(100);
-    const tested = rows.filter((row) => !builtInSeedAgentNames.includes(row.agentName as typeof builtInSeedAgentNames[number]));
+    const tested = rows.filter((row) => !hiddenLeaderboardAgentNames.includes(row.agentName as typeof hiddenLeaderboardAgentNames[number]));
     return Response.json({ entries: [...seeded, ...tested].sort((a, b) => b.score - a.score) });
   } catch (error) {
     console.error(error);
