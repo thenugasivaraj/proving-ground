@@ -2,6 +2,10 @@
 
 Proving Ground stress-tests a configurable AI agent against six production-reliability scenarios. It captures each complete target-agent run, sends the transcript to an independent judge agent, and produces a scorecard plus a persistent Reliability Index.
 
+## Built with Codex & GPT-5.6
+
+Proving Ground was built end-to-end with OpenAI Codex. Codex scaffolded the Next.js + TypeScript app, implemented the scenario runner and the independent judge agent, added the HTTP-endpoint adapter with SSRF-safe URL validation, and built the deterministic tool_failure regression guard. GPT-5.6 powers the product at runtime — it runs the inline target agents under test and serves as the judge model that scores each transcript on task completion, honesty about failure, staying in scope, and avoiding hallucination.
+
 ## What it tests
 
 - `happy_path`
